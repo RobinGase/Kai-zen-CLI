@@ -1,5 +1,8 @@
 import json
+import shutil
+import subprocess
 import sys
+import tempfile
 import textwrap
 import urllib.error
 import urllib.request
@@ -7,6 +10,8 @@ from base64 import b64encode
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
+
+from PIL import Image
 
 
 APP_DIR = Path(__file__).resolve().parent
@@ -112,8 +117,112 @@ class KaiZenCLI:
         return f"{code}{text}{ANSI_RESET}"
 
     def render_logo(self) -> str:
-        # Best version: two crossing diagonal blades forming dynamic K
-        # B=navy body, b=bright blue edge, G=gold seam, V=violet lower arm, S=lavender streak
+        art = self.render_logo_with_converter()
+        if not art:
+            art = self.render_logo_fallback()
+        w = 58
+        use_color = self.color_enabled()
+        border = self.rgb("=" * w, 10, 30, 110) if use_color else "=" * w
+        title_text = "K A I - Z E N   C L I"
+        sub_text = "Local Qwen Test Console"
+        if use_color:
+            title = self.rgb(title_text.center(w), 31, 123, 255)
+            sub = self.rgb(sub_text.center(w), 217, 75, 255)
+        else:
+            title = title_text.center(w)
+            sub = sub_text.center(w)
+        return "\n".join(["", border, "", *art, "", border, title, sub, border, ""])
+
+    def render_logo_with_converter(self) -> list[str]:
+        art = self.render_logo_with_chafa()
+        if art:
+            return art
+
+        if not LOGO_PATH.exists():
+            return []
+        binary = shutil.which("ascii-image-converter")
+        if not binary:
+            return []
+        try:
+            source = self.prepare_logo_source()
+            if self.color_enabled():
+                command = [binary, str(source), "-b", "-W", "56", "-C"]
+            else:
+                command = [binary, str(source), "-c", "-W", "42"]
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+                check=True,
+            )
+        except Exception:
+            return []
+        lines = [line.rstrip() for line in result.stdout.splitlines()]
+        return [line for line in lines if line.strip()]
+
+    def render_logo_with_chafa(self) -> list[str]:
+        if not LOGO_PATH.exists():
+            return []
+        binary = shutil.which("chafa")
+        if not binary:
+            return []
+        try:
+            source = self.prepare_logo_source()
+            command = [
+                binary,
+                "--format",
+                "symbols",
+                "--polite",
+                "on",
+                "--animate",
+                "off",
+                "--bg",
+                "000000",
+                "--optimize",
+                "0",
+            ]
+            if self.color_enabled():
+                command += ["--symbols", "vhalf+braille", "--size", "56x26", "--colors", "full"]
+            else:
+                command += ["--symbols", "ascii+space+border", "--size", "40x18", "--colors", "none"]
+            command.append(str(source))
+
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=20,
+                check=True,
+            )
+        except Exception:
+            return []
+        lines = [line.rstrip() for line in result.stdout.splitlines()]
+        return [line for line in lines if line.strip()]
+
+    def prepare_logo_source(self) -> Path:
+        with Image.open(LOGO_PATH) as image:
+            rgba = image.convert("RGBA")
+            alpha = rgba.getchannel("A")
+            bbox = alpha.getbbox()
+            if bbox:
+                rgba = rgba.crop(bbox)
+
+            width, height = rgba.size
+            scale = 2
+            resized = rgba.resize((max(1, width * scale), max(1, height * scale)), Image.LANCZOS)
+
+            temp_dir = Path(tempfile.gettempdir()) / "kai_zen_cli"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            temp_path = temp_dir / "logo_cropped.png"
+            resized.save(temp_path)
+            return temp_path
+
+    def render_logo_fallback(self) -> list[str]:
         raw_lines = [
             "___________________________SS___________________________",
             "__________________________SSS___________________________",
@@ -151,48 +260,26 @@ class KaiZenCLI:
             "_______________________SSSS_____________________________",
             "______________________SSS_______________________________",
         ]
-
         color_map = {
-            "B": (10, 30, 110),    # deep navy blade body
-            "b": (31, 123, 255),   # bright blue leading edge
-            "G": (243, 229, 93),   # gold highlight seam
-            "V": (130, 40, 220),   # violet lower blade
-            "S": (182, 181, 214),  # lavender brush streak
+            "B": (10, 30, 110),
+            "b": (31, 123, 255),
+            "G": (243, 229, 93),
+            "V": (130, 40, 220),
+            "S": (182, 181, 214),
         }
-        glyph_map = {
-            "B": "%",
-            "b": "/",
-            "G": "|",
-            "V": "%",
-            "S": "~",
-            "_": " ",
-        }
-
-        use_color = self.color_enabled()
+        glyph_map = {"B": "%", "b": "/", "G": "|", "V": "%", "S": "~", "_": " "}
         rendered = []
         for raw in raw_lines:
             row = []
             for ch in raw:
                 glyph = glyph_map.get(ch, ch)
-                if use_color and ch in color_map:
+                if self.color_enabled() and ch in color_map:
                     r, g, b = color_map[ch]
                     row.append(f"\033[38;2;{r};{g};{b}m{glyph}{ANSI_RESET}")
                 else:
                     row.append(glyph)
             rendered.append("".join(row).rstrip())
-
-        art = [line for line in rendered if line.strip()]
-        w = 58
-        border = self.rgb("=" * w, 10, 30, 110) if use_color else "=" * w
-        title_text = "K A I - Z E N   C L I"
-        sub_text = "Local Qwen Test Console"
-        if use_color:
-            title = self.rgb(title_text.center(w), 31, 123, 255)
-            sub = self.rgb(sub_text.center(w), 217, 75, 255)
-        else:
-            title = title_text.center(w)
-            sub = sub_text.center(w)
-        return "\n".join(["", border, "", *art, "", border, title, sub, border, ""])
+        return [line for line in rendered if line.strip()]
 
     def print_banner(self) -> None:
         print(self.render_logo())
@@ -448,6 +535,11 @@ class KaiZenCLI:
 
 
 def main() -> int:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
     SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
     cli = KaiZenCLI()
     if len(sys.argv) > 1 and sys.argv[1] in {"--help", "-h", "help"}:

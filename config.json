@@ -9,5 +9,6 @@
   "think": false,
   "stream": false,
   "keep_alive": "5m",
+  "no_color": false,
   "system_prompt": "You are Qwen 3.5 running inside Kai-zen CLI. Be concise, helpful, and honest about limitations."
 }

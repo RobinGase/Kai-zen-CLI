@@ -34,6 +34,12 @@ kaizen
 - `/set <key> <value>`
 - `/exit`
 
+Color can be disabled with:
+
+```text
+/set no_color true
+```
+
 ## Good first tests
 
 ```text
