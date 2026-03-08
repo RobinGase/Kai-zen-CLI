@@ -1,0 +1,13 @@
+{
+  "backend": "ollama",
+  "base_url": "http://127.0.0.1:11434",
+  "model": "qwen3.5:0.8b",
+  "model_path": "D:\\Robindevwindows\\Kai-Qwen models\\Qwen0-8B",
+  "temperature": 0.7,
+  "top_p": 0.9,
+  "num_predict": 512,
+  "think": false,
+  "stream": false,
+  "keep_alive": "5m",
+  "system_prompt": "You are Qwen 3.5 running inside Kai-zen CLI. Be concise, helpful, and honest about limitations."
+}
