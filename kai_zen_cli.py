@@ -593,6 +593,7 @@ class KaiZenCLI:
     def handle_command(self, raw: str) -> bool:
         parts = raw.split(maxsplit=2)
         cmd = parts[0].lower()
+        argument = raw.split(" ", 1)[1].strip() if len(parts) > 1 else ""
 
         if cmd == "/help":
             self.print_help()
@@ -602,24 +603,24 @@ class KaiZenCLI:
             if self.messages:
                 saved = self.save_session()
                 print(f"Saved current session to {saved.name}")
-            self.session_name = parts[1] if len(parts) > 1 else f"session-{now_stamp()}"
+            self.session_name = argument or f"session-{now_stamp()}"
             self.messages = []
             self.pending_images = []
             print(f"New session: {self.session_name}")
             return True
 
         if cmd in {"/session", "/save"}:
-            name = parts[1] if len(parts) > 1 else self.session_name
+            name = argument or self.session_name
             path = self.save_session(name)
             self.session_name = name
             print(f"Saved session: {path.name}")
             return True
 
         if cmd == "/load":
-            if len(parts) < 2:
+            if not argument:
                 print("Usage: /load <name>")
                 return True
-            self.load_session(parts[1])
+            self.load_session(argument)
             print(f"Loaded session: {self.session_name}")
             return True
 
@@ -645,17 +646,14 @@ class KaiZenCLI:
             return True
 
         if cmd == "/download":
-            initial_query = ""
-            if len(parts) > 1:
-                initial_query = raw.split(" ", 1)[1].strip()
-            self.download_model(initial_query)
+            self.download_model(argument)
             return True
 
         if cmd == "/image":
-            if len(parts) < 2:
+            if not argument:
                 print("Usage: /image <path>")
                 return True
-            image = self.ensure_image(parts[1])
+            image = self.ensure_image(argument)
             self.pending_images.append(image)
             print(f"Queued image: {image}")
             return True

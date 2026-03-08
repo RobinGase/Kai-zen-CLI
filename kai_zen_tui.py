@@ -327,6 +327,18 @@ class KaiZenTUI(App):
         log = self.query_one("#chat-log", RichLog)
         log.write(Panel(Text(output.rstrip() or "(no output)", style="#d7d7df"), title=title, border_style="#3a3a46"))
 
+    def render_loaded_messages(self) -> None:
+        log = self.query_one("#chat-log", RichLog)
+        for message in self.backend.messages:
+            role = message.get("role")
+            content = str(message.get("content", "")).strip()
+            if not content or role == "system":
+                continue
+            if role == "user":
+                log.write(Panel(Text(content, style="#f0f0f4"), title="You", border_style="#5a4b78"))
+            elif role == "assistant":
+                log.write(Panel(Text(content, style="#d7d7df"), title=self.backend.config["model"], border_style="#7a68a2"))
+
     def capture_backend_output(self, fn) -> str:
         buffer = io.StringIO()
         with redirect_stdout(buffer):
@@ -372,13 +384,13 @@ class KaiZenTUI(App):
     async def handle_command(self, raw: str) -> None:
         parts = raw.split(maxsplit=2)
         cmd = parts[0].lower()
+        argument = raw.split(" ", 1)[1].strip() if len(parts) > 1 else ""
 
         if cmd == "/help":
             self.post_output("Help", self.capture_backend_output(self.backend.print_help))
             return
         if cmd == "/download":
-            query = raw.split(" ", 1)[1].strip() if len(parts) > 1 else ""
-            await self.open_download(query)
+            await self.open_download(argument)
             return
         if cmd == "/settings":
             self.post_output("Settings", self.capture_backend_output(self.backend.print_settings))
@@ -398,7 +410,7 @@ class KaiZenTUI(App):
             if self.backend.messages:
                 saved = self.backend.save_session()
                 self.post_system(f"Saved current session to `{saved.name}`")
-            self.backend.session_name = parts[1] if len(parts) > 1 else f"session-{now_stamp()}"
+            self.backend.session_name = argument or f"session-{now_stamp()}"
             self.backend.messages = []
             self.backend.pending_images = []
             self.compact_header = False
@@ -407,19 +419,20 @@ class KaiZenTUI(App):
             self.update_status()
             return
         if cmd in {"/session", "/save"}:
-            name = parts[1] if len(parts) > 1 else self.backend.session_name
+            name = argument or self.backend.session_name
             path = self.backend.save_session(name)
             self.backend.session_name = name
             self.post_system(f"Saved session: `{path.name}`")
             self.update_status()
             return
         if cmd == "/load":
-            if len(parts) < 2:
+            if not argument:
                 self.post_system("Usage: `/load <name>`")
                 return
-            self.backend.load_session(parts[1])
+            self.backend.load_session(argument)
             self.compact_header = bool(self.backend.messages)
             self.query_one("#chat-log", RichLog).clear()
+            self.render_loaded_messages()
             self.post_system(f"Loaded session: `{self.backend.session_name}`")
             self.update_status()
             return
@@ -428,10 +441,10 @@ class KaiZenTUI(App):
             self.post_output("Sessions", names)
             return
         if cmd == "/image":
-            if len(parts) < 2:
+            if not argument:
                 self.post_system("Usage: `/image <path>`")
                 return
-            image = self.backend.ensure_image(parts[1])
+            image = self.backend.ensure_image(argument)
             self.backend.pending_images.append(image)
             self.post_system(f"Queued image: `{image}`")
             self.update_status()
@@ -478,7 +491,10 @@ class KaiZenTUI(App):
         if not value:
             return
         if value.startswith("/"):
-            await self.handle_command(value)
+            try:
+                await self.handle_command(value)
+            except Exception as exc:  # noqa: BLE001
+                self.post_system(f"Command error: {exc}")
             return
         queued = self.backend.pending_images[:]
         self.backend.pending_images = []
