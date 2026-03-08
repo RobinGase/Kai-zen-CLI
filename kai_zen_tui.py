@@ -9,7 +9,7 @@ from pathlib import Path
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
@@ -143,25 +143,29 @@ class DownloadScreen(ModalScreen[dict | None]):
         index = max(0, min(list_view.index, len(self.filtered) - 1))
         return self.filtered[index]
 
+    def move_selection(self, delta: int) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        current = list_view.index or 0
+        list_view.index = max(0, min(current + delta, len(self.filtered) - 1))
+        list_view.focus()
+
     @on(Input.Submitted, "#download-search")
     def submit_search(self) -> None:
         model = self.current_model()
         if model is not None:
             self.dismiss(model)
 
-    def key_down(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
-
-    def key_up(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = max((list_view.index or 0) - 1, 0)
+    @on(events.Key)
+    def handle_keys(self, event: events.Key) -> None:
+        if self.focused is self.query_one("#download-search", Input):
+            if event.key == "down":
+                event.stop()
+                self.move_selection(1)
+            elif event.key == "up":
+                event.stop()
+                self.move_selection(-1)
 
     @on(Input.Changed, "#download-search")
     def update_search(self, event: Input.Changed) -> None:
@@ -236,6 +240,20 @@ class CommandScreen(ModalScreen[dict | None]):
         if self.filtered:
             self.dismiss(self.filtered[0])
 
+    @on(events.Key)
+    def handle_keys(self, event: events.Key) -> None:
+        if self.focused is self.query_one("#download-search", Input) and self.filtered:
+            list_view = self.query_one("#download-list", ListView)
+            current = list_view.index or 0
+            if event.key == "down":
+                event.stop()
+                list_view.index = min(current + 1, len(self.filtered) - 1)
+                list_view.focus()
+            elif event.key == "up":
+                event.stop()
+                list_view.index = max(current - 1, 0)
+                list_view.focus()
+
     @on(ListView.Highlighted, "#download-list")
     def on_highlight(self, event: ListView.Highlighted) -> None:
         if event.item is not None:
@@ -245,20 +263,6 @@ class CommandScreen(ModalScreen[dict | None]):
     def on_select(self, event: ListView.Selected) -> None:
         if event.item is not None:
             self.dismiss(event.item.command_item)  # type: ignore[attr-defined]
-
-    def key_down(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
-
-    def key_up(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = max((list_view.index or 0) - 1, 0)
 
     def key_escape(self) -> None:
         self.dismiss(None)
@@ -309,24 +313,24 @@ class SessionScreen(ModalScreen[str | None]):
         if self.filtered:
             self.dismiss(self.filtered[0].stem)
 
+    @on(events.Key)
+    def handle_keys(self, event: events.Key) -> None:
+        if self.focused is self.query_one("#download-search", Input) and self.filtered:
+            list_view = self.query_one("#download-list", ListView)
+            current = list_view.index or 0
+            if event.key == "down":
+                event.stop()
+                list_view.index = min(current + 1, len(self.filtered) - 1)
+                list_view.focus()
+            elif event.key == "up":
+                event.stop()
+                list_view.index = max(current - 1, 0)
+                list_view.focus()
+
     @on(ListView.Selected, "#download-list")
     def on_select(self, event: ListView.Selected) -> None:
         if event.item is not None:
             self.dismiss(event.item.session_name)  # type: ignore[attr-defined]
-
-    def key_down(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
-
-    def key_up(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = max((list_view.index or 0) - 1, 0)
 
     def key_escape(self) -> None:
         self.dismiss(None)
@@ -378,24 +382,24 @@ class ModelScreen(ModalScreen[str | None]):
         if self.filtered:
             self.dismiss(self.filtered[0])
 
+    @on(events.Key)
+    def handle_keys(self, event: events.Key) -> None:
+        if self.focused is self.query_one("#download-search", Input) and self.filtered:
+            list_view = self.query_one("#download-list", ListView)
+            current = list_view.index or 0
+            if event.key == "down":
+                event.stop()
+                list_view.index = min(current + 1, len(self.filtered) - 1)
+                list_view.focus()
+            elif event.key == "up":
+                event.stop()
+                list_view.index = max(current - 1, 0)
+                list_view.focus()
+
     @on(ListView.Selected, "#download-list")
     def on_select(self, event: ListView.Selected) -> None:
         if event.item is not None:
             self.dismiss(event.item.model_name)  # type: ignore[attr-defined]
-
-    def key_down(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
-
-    def key_up(self) -> None:
-        if not self.filtered:
-            return
-        list_view = self.query_one("#download-list", ListView)
-        list_view.focus()
-        list_view.index = max((list_view.index or 0) - 1, 0)
 
     def key_escape(self) -> None:
         self.dismiss(None)
