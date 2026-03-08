@@ -238,20 +238,20 @@ class KaiZenTUI(App):
         info.append_text(body)
 
         grid = Table.grid(expand=True, padding=(0, 2))
-        grid.add_column(width=28)
+        grid.add_column(width=32)
         grid.add_column(ratio=1)
-        logo_text = Text("\n".join(logo), style="#8e8e99") if logo else Text("KZ", style="bold #b79cff")
-        grid.add_row(logo_text, info)
+        logo_renderable = logo if logo is not None else Text("KZ", style="bold #b79cff")
+        grid.add_row(logo_renderable, info)
 
         panel = Panel(grid, border_style="#2b2b33")
         self.query_one("#hero", Static).update(panel)
 
-    def load_logo_preview(self) -> list[str]:
+    def load_logo_preview(self) -> Text | None:
         if not LOGO_PATH.exists():
-            return []
+            return None
         for binary_name, command in (
-            ("chafa", ["--symbols", "ascii+space+border", "--size", "26x8", "--colors", "none"]),
-            ("ascii-image-converter", ["-c", "-W", "26"]),
+            ("chafa", ["--symbols", "vhalf+braille", "--size", "30x10", "--colors", "full"]),
+            ("ascii-image-converter", ["-C", "-b", "-W", "30"]),
         ):
             binary = shutil.which(binary_name)
             if not binary:
@@ -268,10 +268,15 @@ class KaiZenTUI(App):
                 )
             except Exception:
                 continue
-            lines = [line.rstrip() for line in result.stdout.splitlines() if line.strip()]
-            if lines:
-                return lines[:8]
-        return []
+            rendered = result.stdout.strip("\n")
+            if rendered.strip():
+                try:
+                    return Text.from_ansi(rendered)
+                except Exception:
+                    plain_lines = [line.rstrip() for line in rendered.splitlines() if line.strip()]
+                    if plain_lines:
+                        return Text("\n".join(plain_lines[:10]), style="#8e8e99")
+        return None
 
     def update_status(self) -> None:
         status = Text()
