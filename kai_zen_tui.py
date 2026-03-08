@@ -475,14 +475,14 @@ class KaiZenTUI(App):
         border: round #2b2b33;
         background: #09090c;
         padding: 0 1;
-    }
-
-    #side-panel {
-        width: 32;
-        border: round #4a4259;
-        background: #09090c;
-        padding: 0 1;
-        margin-left: 1;
+        overflow-x: hidden;
+        scrollbar-background: #09090c;
+        scrollbar-background-hover: #09090c;
+        scrollbar-background-active: #09090c;
+        scrollbar-color: #050507;
+        scrollbar-color-hover: #0b0b0f;
+        scrollbar-color-active: #15151b;
+        scrollbar-corner-color: #09090c;
     }
 
     #composer {
@@ -515,7 +515,6 @@ class KaiZenTUI(App):
             yield Static(id="hero")
             with Horizontal(id="body"):
                 yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
-                yield Static(id="side-panel")
             with Container(id="composer"):
                 yield Input(placeholder="Message Kai-zen or type / for the command palette", id="input")
                 yield Static("Enter sends. Type / to open commands. /download, /model, and /load now open pickers with arrow-key navigation.", id="command-hint")
@@ -525,9 +524,21 @@ class KaiZenTUI(App):
         self.compact_header = bool(self.backend.messages)
         self.update_hero()
         self.update_status()
-        self.update_side_panel()
         self.post_system("Kai-zen TUI ready. Type `/` for the command palette. `/download` supports search, arrows, and guarded larger-model pulls.")
         self.query_one("#input", Input).focus()
+
+    def build_quick_actions(self) -> Panel:
+        installed = sorted(self.backend.installed_models())
+        quick = Text()
+        quick.append("Quick Actions\n", style="bold #b79cff")
+        quick.append("/\n/download qwen\n/model\n/load\n/settings\n", style="#8e8e99")
+        quick.append("\nInstalled\n", style="bold #e4e4ea")
+        if self.compact_header:
+            quick.append("- " + "\n- ".join(installed[:3]) if installed else "- none", style="#8e8e99")
+        else:
+            quick.append("\n".join(f"- {name}" for name in installed[:6]) or "- none", style="#8e8e99")
+        border = "#2f2740" if not self.compact_header else "#24242b"
+        return Panel(quick, border_style=border, padding=(0, 1))
 
     def update_hero(self) -> None:
         logo = self.load_logo_preview()
@@ -559,8 +570,9 @@ class KaiZenTUI(App):
         grid = Table.grid(expand=True, padding=(0, 2))
         grid.add_column(width=32 if not self.compact_header else 22)
         grid.add_column(ratio=1)
+        grid.add_column(width=28 if not self.compact_header else 22)
         logo_renderable = logo if logo is not None else Text("KZ", style="bold #b79cff")
-        grid.add_row(logo_renderable, info)
+        grid.add_row(logo_renderable, info, self.build_quick_actions())
 
         panel = Panel(grid, border_style="#2b2b33")
         self.query_one("#hero", Static).update(panel)
@@ -618,16 +630,6 @@ class KaiZenTUI(App):
 
     def update_status(self) -> None:
         self.update_hero()
-
-    def update_side_panel(self) -> None:
-        installed = sorted(self.backend.installed_models())
-        installed_text = "\n".join(f"- {name}" for name in installed[:8]) or "- none"
-        panel = Text()
-        panel.append("Quick Actions\n", style="bold #b79cff")
-        panel.append("/\n/download qwen\n/model\n/load\n/settings\n", style="#8e8e99")
-        panel.append("\nInstalled\n", style="bold #e4e4ea")
-        panel.append(installed_text, style="#8e8e99")
-        self.query_one("#side-panel", Static).update(panel)
 
     def post_system(self, message: str) -> None:
         log = self.query_one("#chat-log", RichLog)
@@ -733,7 +735,6 @@ class KaiZenTUI(App):
         self.backend.save_config()
         self.call_from_thread(self.post_system, f"Downloaded and activated `{model['name']}`.")
         self.call_from_thread(self.update_status)
-        self.call_from_thread(self.update_side_panel)
 
     @work(thread=True)
     def send_chat(self, prompt: str, images: list[Path]) -> None:
