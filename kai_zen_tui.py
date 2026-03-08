@@ -509,6 +509,7 @@ class KaiZenTUI(App):
         super().__init__()
         self.backend = KaiZenCLI()
         self.compact_header = False
+        self.pending_download_model: dict | None = None
 
     def compose(self) -> ComposeResult:
         with Vertical(id="shell"):
@@ -667,19 +668,18 @@ class KaiZenTUI(App):
             fn()
         return buffer.getvalue().strip()
 
-    async def open_command_palette(self, initial_query: str = "") -> None:
-        choice = await self.push_screen_wait(CommandScreen(initial_query))
+    def on_command_palette_choice(self, choice: dict | None) -> None:
         if not choice:
             return
         command = choice["name"]
         if command == "/download":
-            await self.open_download(choice.get("query_hint", ""))
+            self.open_download(choice.get("query_hint", ""))
             return
         if command == "/model":
-            await self.open_model_picker()
+            self.open_model_picker()
             return
         if command == "/load":
-            await self.open_session_picker()
+            self.open_session_picker()
             return
         if command == "/settings":
             self.post_output("Settings", self.capture_backend_output(self.backend.print_settings))
@@ -688,20 +688,24 @@ class KaiZenTUI(App):
             self.post_output("Help", self.capture_backend_output(self.backend.print_help))
             return
         if command == "/new":
-            await self.handle_command("/new")
+            self.run_worker(self.handle_command("/new"), exclusive=True)
             return
         if command == "/clearimage":
-            await self.handle_command("/clearimage")
+            self.run_worker(self.handle_command("/clearimage"), exclusive=True)
 
-    async def open_session_picker(self, initial_query: str = "") -> None:
-        session_name = await self.push_screen_wait(SessionScreen(initial_query))
+    def open_command_palette(self, initial_query: str = "") -> None:
+        self.push_screen(CommandScreen(initial_query), self.on_command_palette_choice)
+
+    def on_session_picked(self, session_name: str | None) -> None:
         if not session_name:
             self.post_system("Session picker cancelled.")
             return
-        await self.handle_command(f"/load {session_name}")
+        self.run_worker(self.handle_command(f"/load {session_name}"), exclusive=True)
 
-    async def open_model_picker(self, initial_query: str = "") -> None:
-        model_name = await self.push_screen_wait(ModelScreen(self.backend, initial_query))
+    def open_session_picker(self, initial_query: str = "") -> None:
+        self.push_screen(SessionScreen(initial_query), self.on_session_picked)
+
+    def on_model_picked(self, model_name: str | None) -> None:
         if not model_name:
             self.post_system("Model picker cancelled.")
             return
@@ -710,19 +714,42 @@ class KaiZenTUI(App):
         self.post_system(f"Model set to `{model_name}`")
         self.update_status()
 
-    async def open_download(self, initial_query: str = "") -> None:
-        model = await self.push_screen_wait(DownloadScreen(self.backend, initial_query))
+    def open_model_picker(self, initial_query: str = "") -> None:
+        self.push_screen(ModelScreen(self.backend, initial_query), self.on_model_picked)
+
+    def begin_download(self, model: dict) -> None:
+        self.post_system(f"Downloading `{model['name']}`...")
+        self.pull_model(model)
+
+    def on_download_confirmed(self, proceed: bool) -> None:
+        model = self.pending_download_model
+        self.pending_download_model = None
+        if not model:
+            return
+        if not proceed:
+            self.post_system("Download cancelled after hardware warning.")
+            return
+        self.begin_download(model)
+
+    def on_download_picked(self, model: dict | None) -> None:
         if not model:
             self.post_system("Download cancelled.")
             return
         guardrail = self.backend.model_guardrail(model)
         if guardrail["level"] == "heavy":
-            proceed = await self.push_screen_wait(ConfirmScreen("Large Model Warning", f"{model['name']} is outside the comfortable {HARDWARE_PROFILE['vram_gb']} GB target for your {HARDWARE_PROFILE['gpu']}.\n\n{guardrail['message']}\n\nPress Enter/Y to continue or Esc/N to cancel."))
-            if not proceed:
-                self.post_system("Download cancelled after hardware warning.")
-                return
-        self.post_system(f"Downloading `{model['name']}`...")
-        self.pull_model(model)
+            self.pending_download_model = model
+            self.push_screen(
+                ConfirmScreen(
+                    "Large Model Warning",
+                    f"{model['name']} is outside the comfortable {HARDWARE_PROFILE['vram_gb']} GB target for your {HARDWARE_PROFILE['gpu']}.\n\n{guardrail['message']}\n\nPress Enter/Y to continue or Esc/N to cancel.",
+                ),
+                self.on_download_confirmed,
+            )
+            return
+        self.begin_download(model)
+
+    def open_download(self, initial_query: str = "") -> None:
+        self.push_screen(DownloadScreen(self.backend, initial_query), self.on_download_picked)
 
     @work(thread=True)
     def pull_model(self, model: dict) -> None:
@@ -753,21 +780,21 @@ class KaiZenTUI(App):
         argument = raw.split(" ", 1)[1].strip() if len(parts) > 1 else ""
 
         if cmd == "/" or (not argument and cmd not in {item["name"] for item in COMMAND_CATALOG} and cmd.startswith("/")):
-            await self.open_command_palette(cmd.lstrip("/"))
+            self.open_command_palette(cmd.lstrip("/"))
             return
 
         if cmd == "/help":
             self.post_output("Help", self.capture_backend_output(self.backend.print_help))
             return
         if cmd == "/download":
-            await self.open_download(argument)
+            self.open_download(argument)
             return
         if cmd == "/settings":
             self.post_output("Settings", self.capture_backend_output(self.backend.print_settings))
             return
         if cmd == "/model":
             if len(parts) == 1:
-                await self.open_model_picker()
+                self.open_model_picker()
             elif len(parts) >= 3 and parts[1].lower() == "set":
                 self.backend.config["model"] = parts[2]
                 self.backend.save_config()
@@ -801,7 +828,7 @@ class KaiZenTUI(App):
             return
         if cmd == "/load":
             if not argument:
-                await self.open_session_picker()
+                self.open_session_picker()
                 return
             try:
                 self.backend.load_session(argument)
@@ -815,7 +842,7 @@ class KaiZenTUI(App):
             self.update_status()
             return
         if cmd == "/sessions":
-            await self.open_session_picker()
+            self.open_session_picker()
             return
         if cmd == "/image":
             if not argument:
