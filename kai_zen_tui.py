@@ -6,6 +6,7 @@ from contextlib import redirect_stdout
 from pathlib import Path
 
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
@@ -228,16 +229,21 @@ class KaiZenTUI(App):
         body.append(self.backend.config["backend"], style="bold #b79cff")
         body.append("   Session ", style="#6f7685")
         body.append(self.backend.session_name, style="bold #bcbcc7")
-        content = Text()
-        if logo:
-            content.append("\n".join(logo), style="#8e8e99")
-            content.append("\n\n")
-        content.append_text(title)
-        content.append("\n")
-        content.append_text(subtitle)
-        content.append("\n\n")
-        content.append_text(body)
-        panel = Panel(content, border_style="#2b2b33")
+
+        info = Text()
+        info.append_text(title)
+        info.append("\n")
+        info.append_text(subtitle)
+        info.append("\n\n")
+        info.append_text(body)
+
+        grid = Table.grid(expand=True, padding=(0, 2))
+        grid.add_column(width=28)
+        grid.add_column(ratio=1)
+        logo_text = Text("\n".join(logo), style="#8e8e99") if logo else Text("KZ", style="bold #b79cff")
+        grid.add_row(logo_text, info)
+
+        panel = Panel(grid, border_style="#2b2b33")
         self.query_one("#hero", Static).update(panel)
 
     def load_logo_preview(self) -> list[str]:
