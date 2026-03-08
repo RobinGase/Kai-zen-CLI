@@ -18,7 +18,7 @@ from PIL import Image
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = APP_DIR / "config.json"
 SESSIONS_DIR = APP_DIR / "sessions"
-LOGO_PATH = Path(r"C:\Users\Robin\Desktop\RRTECH\Assets\KaizenInnovations\logoEmblem.png")
+LOGO_PATH = Path(os.environ.get("KAI_ZEN_LOGO_PATH", str(APP_DIR / "assets" / "logoEmblem.png")))
 ANSI_RESET = "\033[0m"
 ANSI_CYAN = "\033[96m"
 ANSI_BLUE = "\033[94m"
@@ -45,7 +45,7 @@ DEFAULT_CONFIG = {
     "backend": "ollama",
     "base_url": "http://127.0.0.1:11434",
     "model": "qwen3.5:0.8b",
-    "model_path": r"D:\Robindevwindows\Kai-Qwen models\Qwen0-8B",
+    "model_path": "./models/Qwen0-8B",
     "temperature": 0.7,
     "top_p": 0.9,
     "num_predict": 512,
@@ -54,6 +54,8 @@ DEFAULT_CONFIG = {
     "keep_alive": "5m",
     "system_prompt": "You are Qwen 3.5 running inside Kai-zen CLI. Be concise, helpful, and honest about limitations.",
 }
+
+BASE_URL_ENV_KEYS = ("KAI_ZEN_BASE_URL", "OLLAMA_BASE_URL")
 
 
 def now_stamp() -> str:
@@ -82,9 +84,17 @@ class KaiZenCLI:
                 loaded = json.load(handle)
             config = deepcopy(DEFAULT_CONFIG)
             config.update(loaded)
-            return config
+            return self.apply_env_overrides(config)
         self.save_config(DEFAULT_CONFIG)
-        return deepcopy(DEFAULT_CONFIG)
+        return self.apply_env_overrides(deepcopy(DEFAULT_CONFIG))
+
+    def apply_env_overrides(self, config: dict) -> dict:
+        for key in BASE_URL_ENV_KEYS:
+            value = os.environ.get(key, "").strip()
+            if value:
+                config["base_url"] = value
+                break
+        return config
 
     def save_config(self, config: dict | None = None) -> None:
         CONFIG_PATH.write_text(

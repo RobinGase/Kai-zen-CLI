@@ -2,7 +2,7 @@
   "backend": "ollama",
   "base_url": "http://127.0.0.1:11434",
   "model": "qwen3.5:0.8b",
-  "model_path": "D:\\Robindevwindows\\Kai-Qwen models\\Qwen0-8B",
+  "model_path": "./models/Qwen0-8B",
   "temperature": 0.7,
   "top_p": 0.9,
   "num_predict": 512,
