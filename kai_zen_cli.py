@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -24,6 +25,21 @@ ANSI_BLUE = "\033[94m"
 ANSI_DIM = "\033[2m"
 ANSI_GOLD = "\033[93m"
 ANSI_VIOLET = "\033[95m"
+
+MODEL_CATALOG = [
+    {"name": "qwen3.5:0.8b", "label": "Qwen 3.5 0.8B", "size": "1.0 GB", "modality": "text", "vram": "4GB+", "speed": "very fast", "tags": ["qwen", "0.8b", "small", "text"]},
+    {"name": "qwen3.5:2b", "label": "Qwen 3.5 2B", "size": "1.6 GB", "modality": "text", "vram": "6GB+", "speed": "fast", "tags": ["qwen", "2b", "small", "text"]},
+    {"name": "qwen3.5:4b", "label": "Qwen 3.5 4B", "size": "2.6 GB", "modality": "text", "vram": "8GB+", "speed": "fast", "tags": ["qwen", "4b", "text", "balanced"]},
+    {"name": "qwen3.5:9b", "label": "Qwen 3.5 9B", "size": "5.5 GB", "modality": "text", "vram": "10GB+", "speed": "medium", "tags": ["qwen", "9b", "text", "quality"]},
+    {"name": "qwen2.5vl:3b", "label": "Qwen 2.5 VL 3B", "size": "5.2 GB", "modality": "multimodal", "vram": "8GB+", "speed": "medium", "tags": ["qwen", "vision", "vl", "3b", "multimodal"]},
+    {"name": "qwen2.5vl:7b", "label": "Qwen 2.5 VL 7B", "size": "8.4 GB", "modality": "multimodal", "vram": "12GB+", "speed": "slower", "tags": ["qwen", "vision", "vl", "7b", "multimodal"]},
+    {"name": "llama3.2:3b", "label": "Llama 3.2 3B", "size": "2.0 GB", "modality": "text", "vram": "6GB+", "speed": "fast", "tags": ["llama", "3b", "text"]},
+    {"name": "llama3.1:8b", "label": "Llama 3.1 8B", "size": "4.7 GB", "modality": "text", "vram": "10GB+", "speed": "medium", "tags": ["llama", "8b", "text"]},
+    {"name": "phi4:mini", "label": "Phi 4 Mini", "size": "2.5 GB", "modality": "text", "vram": "8GB+", "speed": "fast", "tags": ["phi", "mini", "text", "small"]},
+    {"name": "mistral:7b", "label": "Mistral 7B", "size": "4.1 GB", "modality": "text", "vram": "8GB+", "speed": "medium", "tags": ["mistral", "7b", "text"]},
+    {"name": "gemma2:2b", "label": "Gemma 2 2B", "size": "1.6 GB", "modality": "text", "vram": "6GB+", "speed": "fast", "tags": ["gemma", "2b", "small", "text"]},
+    {"name": "gemma2:9b", "label": "Gemma 2 9B", "size": "5.4 GB", "modality": "text", "vram": "10GB+", "speed": "medium", "tags": ["gemma", "9b", "text", "quality"]},
+]
 
 DEFAULT_CONFIG = {
     "backend": "ollama",
@@ -304,6 +320,7 @@ class KaiZenCLI:
                 - /sessions                  List saved sessions
                 - /model                     Show current model
                 - /model set <name>          Set the active model
+                - /download                  Open searchable model picker
                 - /image <path>              Queue an image for the next prompt
                 - /clearimage                Clear queued image attachments
                 - /askimg <path> | <prompt>  Send one multimodal prompt immediately
@@ -315,7 +332,7 @@ class KaiZenCLI:
                 Current settings keys
                 - backend, base_url, model, model_path
                 - temperature, top_p, num_predict
-                - think, stream, keep_alive, system_prompt
+                - think, stream, keep_alive, system_prompt, no_color
                 """
             ).strip()
         )
@@ -333,6 +350,168 @@ class KaiZenCLI:
             return int(value)
         except ValueError:
             return value
+
+    def installed_models(self) -> set[str]:
+        binary = shutil.which("ollama")
+        if not binary:
+            return set()
+        try:
+            result = subprocess.run(
+                [binary, "list"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                check=True,
+            )
+        except Exception:
+            return set()
+
+        installed = set()
+        for line in result.stdout.splitlines()[1:]:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            installed.add(stripped.split()[0])
+        return installed
+
+    def filter_model_catalog(self, query: str) -> list[dict]:
+        query = query.strip().lower()
+        if not query:
+            return MODEL_CATALOG[:]
+
+        filtered = []
+        for model in MODEL_CATALOG:
+            haystack = " ".join([model["name"], model["label"], *model["tags"]]).lower()
+            if query in haystack:
+                filtered.append(model)
+        return filtered
+
+    def clear_screen(self) -> None:
+        if os.name == "nt":
+            os.system("cls")
+        else:
+            os.system("clear")
+
+    def model_badges(self, model: dict) -> str:
+        parts = [
+            self.style(model["modality"], ANSI_VIOLET),
+            self.style(model["vram"], ANSI_BLUE),
+            self.style(model["speed"], ANSI_GOLD),
+        ]
+        return " | ".join(parts)
+
+    def render_model_picker(self, query: str, selected: int, filtered: list[dict], installed: set[str], offset: int) -> None:
+        self.clear_screen()
+        print(self.style("Kai-zen Model Download", ANSI_CYAN))
+        print("Type to search. Up/Down to move. Enter to download. Esc to cancel. Backspace to edit.\n")
+        print(f"Search: {self.style(query or 'all models', ANSI_GOLD)}")
+        print(f"Matches: {self.style(str(len(filtered)), ANSI_BLUE)}\n")
+
+        if not filtered:
+            print("No models match your search.")
+            return
+
+        window = filtered[offset:offset + 12]
+        for index, model in enumerate(window):
+            cursor = ">" if index == selected else " "
+            installed_mark = self.style("installed", ANSI_VIOLET) if model["name"] in installed else self.style("available", ANSI_DIM)
+            line = f"{cursor} {model['label']}  [{model['name']}]"
+            if index == selected:
+                line = self.style(line, ANSI_BLUE)
+            print(line)
+            print(f"   {model['size']}  |  {self.model_badges(model)}  |  {installed_mark}")
+            print(f"   tags: {', '.join(model['tags'])}")
+
+        shown_to = min(len(filtered), offset + len(window))
+        print(f"\nShowing {offset + 1}-{shown_to} of {len(filtered)}")
+
+    def select_download_model(self, query: str = "") -> dict | None:
+        try:
+            import msvcrt  # type: ignore
+        except ImportError:
+            return self.select_download_model_fallback(query)
+
+        installed = self.installed_models()
+        selected = 0
+        offset = 0
+        page_size = 12
+        while True:
+            filtered = self.filter_model_catalog(query)
+            if selected >= max(1, len(filtered)):
+                selected = max(0, len(filtered) - 1)
+            if selected < offset:
+                offset = selected
+            elif selected >= offset + page_size:
+                offset = selected - page_size + 1
+            self.render_model_picker(query, selected - offset, filtered, installed, offset)
+
+            key = msvcrt.getwch()
+            if key in {"\r", "\n"}:
+                if filtered:
+                    self.clear_screen()
+                    return filtered[selected]
+                continue
+            if key == "\x1b":
+                self.clear_screen()
+                return None
+            if key in {"\b", "\x7f"}:
+                query = query[:-1]
+                selected = 0
+                offset = 0
+                continue
+            if key in {"\x00", "\xe0"}:
+                arrow = msvcrt.getwch()
+                if arrow == "H" and selected > 0:
+                    selected -= 1
+                elif arrow == "P" and selected < max(0, len(filtered) - 1):
+                    selected += 1
+                elif arrow == "I":
+                    selected = max(0, selected - page_size)
+                elif arrow == "Q":
+                    selected = min(max(0, len(filtered) - 1), selected + page_size)
+                continue
+            if key.isprintable():
+                query += key
+                selected = 0
+                offset = 0
+
+    def select_download_model_fallback(self, query: str = "") -> dict | None:
+        while True:
+            filtered = self.filter_model_catalog(query)
+            print(self.style("Kai-zen Model Download", ANSI_CYAN))
+            print(f"Search: {query or 'all models'}")
+            for index, model in enumerate(filtered[:10], start=1):
+                print(f"{index}. {model['label']} [{model['name']}] {model['size']}")
+                print(f"   {model['modality']} | {model['vram']} | {model['speed']} | {', '.join(model['tags'])}")
+            choice = input("Search text, number, or blank to cancel> ").strip()
+            if not choice:
+                return None
+            if choice.isdigit() and 1 <= int(choice) <= min(len(filtered), 10):
+                return filtered[int(choice) - 1]
+            query = choice
+
+    def download_model(self, initial_query: str = "") -> None:
+        binary = shutil.which("ollama")
+        if not binary:
+            raise RuntimeError("Ollama is not installed or not on PATH")
+
+        model = self.select_download_model(initial_query)
+        if not model:
+            print("Download cancelled")
+            return
+
+        print(f"Downloading {self.style(model['name'], ANSI_GOLD)}...\n")
+        subprocess.run([binary, "pull", model["name"]], check=True)
+
+        set_active = input(f"Set {model['name']} as active model? [Y/n] ").strip().lower()
+        if set_active in {"", "y", "yes"}:
+            self.config["model"] = model["name"]
+            self.save_config()
+            print(f"Active model set to {self.config['model']}")
+        else:
+            print(f"Downloaded {model['name']}")
 
     def ensure_image(self, path_str: str) -> Path:
         path = Path(path_str.strip().strip('"'))
@@ -452,6 +631,13 @@ class KaiZenCLI:
                 print(f"Model set to {self.config['model']}")
                 return True
             print("Usage: /model OR /model set <name>")
+            return True
+
+        if cmd == "/download":
+            initial_query = ""
+            if len(parts) > 1:
+                initial_query = raw.split(" ", 1)[1].strip()
+            self.download_model(initial_query)
             return True
 
         if cmd == "/image":
