@@ -25,20 +25,33 @@ ANSI_BLUE = "\033[94m"
 ANSI_DIM = "\033[2m"
 ANSI_GOLD = "\033[93m"
 ANSI_VIOLET = "\033[95m"
+HARDWARE_PROFILE = {
+    "gpu": "RTX 3080 10 GB",
+    "vram_gb": 10,
+    "ram_gb": 64,
+}
 
 MODEL_CATALOG = [
     {"name": "qwen3.5:0.8b", "label": "Qwen 3.5 0.8B", "size": "1.0 GB", "modality": "text", "vram": "4GB+", "speed": "very fast", "tags": ["qwen", "0.8b", "small", "text"]},
     {"name": "qwen3.5:2b", "label": "Qwen 3.5 2B", "size": "1.6 GB", "modality": "text", "vram": "6GB+", "speed": "fast", "tags": ["qwen", "2b", "small", "text"]},
     {"name": "qwen3.5:4b", "label": "Qwen 3.5 4B", "size": "2.6 GB", "modality": "text", "vram": "8GB+", "speed": "fast", "tags": ["qwen", "4b", "text", "balanced"]},
     {"name": "qwen3.5:9b", "label": "Qwen 3.5 9B", "size": "5.5 GB", "modality": "text", "vram": "10GB+", "speed": "medium", "tags": ["qwen", "9b", "text", "quality"]},
+    {"name": "qwen2.5:3b", "label": "Qwen 2.5 3B", "size": "2.0 GB", "modality": "text", "vram": "6GB+", "speed": "fast", "tags": ["qwen", "2.5", "3b", "text"]},
+    {"name": "qwen2.5:7b", "label": "Qwen 2.5 7B", "size": "4.7 GB", "modality": "text", "vram": "10GB+", "speed": "medium", "tags": ["qwen", "2.5", "7b", "text"]},
+    {"name": "qwen2.5-coder:1.5b", "label": "Qwen 2.5 Coder 1.5B", "size": "1.3 GB", "modality": "code", "vram": "4GB+", "speed": "very fast", "tags": ["qwen", "coder", "1.5b", "code"]},
+    {"name": "qwen2.5-coder:7b", "label": "Qwen 2.5 Coder 7B", "size": "4.7 GB", "modality": "code", "vram": "10GB+", "speed": "medium", "tags": ["qwen", "coder", "7b", "code"]},
     {"name": "qwen2.5vl:3b", "label": "Qwen 2.5 VL 3B", "size": "5.2 GB", "modality": "multimodal", "vram": "8GB+", "speed": "medium", "tags": ["qwen", "vision", "vl", "3b", "multimodal"]},
     {"name": "qwen2.5vl:7b", "label": "Qwen 2.5 VL 7B", "size": "8.4 GB", "modality": "multimodal", "vram": "12GB+", "speed": "slower", "tags": ["qwen", "vision", "vl", "7b", "multimodal"]},
+    {"name": "llama3.2:1b", "label": "Llama 3.2 1B", "size": "1.3 GB", "modality": "text", "vram": "4GB+", "speed": "very fast", "tags": ["llama", "1b", "text", "small"]},
     {"name": "llama3.2:3b", "label": "Llama 3.2 3B", "size": "2.0 GB", "modality": "text", "vram": "6GB+", "speed": "fast", "tags": ["llama", "3b", "text"]},
     {"name": "llama3.1:8b", "label": "Llama 3.1 8B", "size": "4.7 GB", "modality": "text", "vram": "10GB+", "speed": "medium", "tags": ["llama", "8b", "text"]},
-    {"name": "phi4:mini", "label": "Phi 4 Mini", "size": "2.5 GB", "modality": "text", "vram": "8GB+", "speed": "fast", "tags": ["phi", "mini", "text", "small"]},
     {"name": "mistral:7b", "label": "Mistral 7B", "size": "4.1 GB", "modality": "text", "vram": "8GB+", "speed": "medium", "tags": ["mistral", "7b", "text"]},
+    {"name": "mistral-nemo:12b", "label": "Mistral Nemo 12B", "size": "7.1 GB", "modality": "text", "vram": "12GB+", "speed": "slower", "tags": ["mistral", "nemo", "12b", "text"]},
+    {"name": "phi4:mini", "label": "Phi 4 Mini", "size": "2.5 GB", "modality": "text", "vram": "8GB+", "speed": "fast", "tags": ["phi", "mini", "text", "small"]},
     {"name": "gemma2:2b", "label": "Gemma 2 2B", "size": "1.6 GB", "modality": "text", "vram": "6GB+", "speed": "fast", "tags": ["gemma", "2b", "small", "text"]},
     {"name": "gemma2:9b", "label": "Gemma 2 9B", "size": "5.4 GB", "modality": "text", "vram": "10GB+", "speed": "medium", "tags": ["gemma", "9b", "text", "quality"]},
+    {"name": "deepseek-r1:8b", "label": "DeepSeek R1 8B", "size": "4.9 GB", "modality": "reasoning", "vram": "10GB+", "speed": "medium", "tags": ["deepseek", "r1", "8b", "reasoning"]},
+    {"name": "deepseek-r1:14b", "label": "DeepSeek R1 14B", "size": "9.0 GB", "modality": "reasoning", "vram": "16GB+", "speed": "slow", "tags": ["deepseek", "r1", "14b", "reasoning"]},
 ]
 
 DEFAULT_CONFIG = {
@@ -351,6 +364,62 @@ class KaiZenCLI:
     def print_settings(self) -> None:
         print(json.dumps(self.config, indent=2))
 
+    def api_request(self, path: str, payload: dict | None = None, method: str = "GET", timeout: int = 60):
+        request = urllib.request.Request(
+            url=f"{self.config['base_url'].rstrip('/')}{path}",
+            data=json.dumps(payload).encode("utf-8") if payload is not None else None,
+            headers={"Content-Type": "application/json"},
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                raw = response.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"HTTP {exc.code}: {body}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"Cannot reach Ollama at {self.config['base_url']}") from exc
+
+        chunks = [line.strip() for line in raw.splitlines() if line.strip()]
+        if not chunks:
+            return {}
+        if len(chunks) == 1:
+            return json.loads(chunks[0])
+        return [json.loads(chunk) for chunk in chunks]
+
+    def parse_vram_requirement(self, model: dict) -> int | None:
+        digits = "".join(ch for ch in str(model.get("vram", "")) if ch.isdigit())
+        if not digits:
+            return None
+        return int(digits)
+
+    def model_guardrail(self, model: dict) -> dict:
+        required = self.parse_vram_requirement(model)
+        profile = HARDWARE_PROFILE
+        if required is None:
+            return {
+                "level": "unknown",
+                "label": "unknown fit",
+                "message": f"No VRAM estimate is available for this model. Your {profile['gpu']} may still run it via offload.",
+            }
+        if required <= profile["vram_gb"]:
+            return {
+                "level": "fit",
+                "label": "good fit",
+                "message": f"Fits your {profile['gpu']} class target cleanly.",
+            }
+        if required <= profile["vram_gb"] + 4:
+            return {
+                "level": "stretch",
+                "label": "stretch",
+                "message": f"Likely usable, but may spill into system RAM on your {profile['gpu']} and feel slower.",
+            }
+        return {
+            "level": "heavy",
+            "label": "over cap",
+            "message": f"Outside the comfortable {profile['vram_gb']} GB VRAM target. Keep it available, but warn before download.",
+        }
+
     def parse_value(self, value: str):
         lowered = value.lower()
         if lowered in {"true", "false"}:
@@ -363,6 +432,19 @@ class KaiZenCLI:
             return value
 
     def installed_models(self) -> set[str]:
+        try:
+            data = self.api_request("/api/tags")
+            models = data.get("models", []) if isinstance(data, dict) else []
+            installed = set()
+            for model in models:
+                name = model.get("name")
+                if name:
+                    installed.add(name)
+            if installed:
+                return installed
+        except Exception:
+            pass
+
         binary = shutil.which("ollama")
         if not binary:
             return set()
@@ -382,9 +464,8 @@ class KaiZenCLI:
         installed = set()
         for line in result.stdout.splitlines()[1:]:
             stripped = line.strip()
-            if not stripped:
-                continue
-            installed.add(stripped.split()[0])
+            if stripped:
+                installed.add(stripped.split()[0])
         return installed
 
     def filter_model_catalog(self, query: str) -> list[dict]:
@@ -397,7 +478,32 @@ class KaiZenCLI:
             haystack = " ".join([model["name"], model["label"], *model["tags"]]).lower()
             if query in haystack:
                 filtered.append(model)
+        exact_names = {model["name"].lower() for model in filtered}
+        if ":" in query and query not in exact_names:
+            filtered.insert(0, {
+                "name": query,
+                "label": f"Custom model {query}",
+                "size": "unknown",
+                "modality": "custom",
+                "vram": "unknown",
+                "speed": "unknown",
+                "tags": ["custom", "manual"],
+                "custom": True,
+            })
         return filtered
+
+    def pull_model(self, model_name: str) -> None:
+        try:
+            data = self.api_request("/api/pull", {"name": model_name, "stream": False}, method="POST", timeout=1800)
+            final = data[-1] if isinstance(data, list) and data else data
+            if isinstance(final, dict) and final.get("error"):
+                raise RuntimeError(final["error"])
+            return
+        except Exception:
+            binary = shutil.which("ollama")
+            if not binary:
+                raise
+            subprocess.run([binary, "pull", model_name], check=True)
 
     def clear_screen(self) -> None:
         if os.name == "nt":
@@ -504,17 +610,22 @@ class KaiZenCLI:
             query = choice
 
     def download_model(self, initial_query: str = "") -> None:
-        binary = shutil.which("ollama")
-        if not binary:
-            raise RuntimeError("Ollama is not installed or not on PATH")
-
         model = self.select_download_model(initial_query)
         if not model:
             print("Download cancelled")
             return
 
+        guardrail = self.model_guardrail(model)
+        print(f"Hardware fit: {guardrail['label']}")
+        print(guardrail["message"])
+        if guardrail["level"] == "heavy":
+            proceed = input("This model is outside your comfortable hardware target. Continue download? [y/N] ").strip().lower()
+            if proceed not in {"y", "yes"}:
+                print("Download cancelled")
+                return
+
         print(f"Downloading {self.style(model['name'], ANSI_GOLD)}...\n")
-        subprocess.run([binary, "pull", model["name"]], check=True)
+        self.pull_model(model["name"])
 
         set_active = input(f"Set {model['name']} as active model? [Y/n] ").strip().lower()
         if set_active in {"", "y", "yes"}:

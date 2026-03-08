@@ -15,7 +15,18 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, RichLog, Static
 
-from kai_zen_cli import KaiZenCLI, LOGO_PATH, MODEL_CATALOG, SESSIONS_DIR, now_stamp
+from kai_zen_cli import HARDWARE_PROFILE, KaiZenCLI, LOGO_PATH, MODEL_CATALOG, SESSIONS_DIR, now_stamp
+
+
+COMMAND_CATALOG = [
+    {"name": "/download", "label": "Download model", "description": "Open the searchable model browser", "query_hint": "qwen"},
+    {"name": "/model", "label": "Switch model", "description": "Pick an installed model with arrows"},
+    {"name": "/load", "label": "Load session", "description": "Browse saved sessions and restore one"},
+    {"name": "/settings", "label": "View settings", "description": "Inspect the active runtime config"},
+    {"name": "/help", "label": "Command help", "description": "See every available slash command"},
+    {"name": "/new", "label": "New session", "description": "Start a fresh conversation"},
+    {"name": "/clearimage", "label": "Clear images", "description": "Drop queued image attachments"},
+]
 
 
 class DownloadScreen(ModalScreen[dict | None]):
@@ -61,6 +72,7 @@ class DownloadScreen(ModalScreen[dict | None]):
         self.backend = backend
         self.initial_query = initial_query
         self.filtered = MODEL_CATALOG[:]
+        self.installed = set()
 
     def compose(self) -> ComposeResult:
         with Container(id="download-shell"):
@@ -70,18 +82,30 @@ class DownloadScreen(ModalScreen[dict | None]):
             yield Static(id="download-meta")
 
     def on_mount(self) -> None:
+        self.installed = self.backend.installed_models()
         self.refresh_models(self.initial_query)
         self.query_one("#download-search", Input).focus()
 
     def build_item(self, model: dict) -> ListItem:
-        installed = model["name"] in self.backend.installed_models()
-        installed_text = "installed" if installed else "available"
+        installed = model["name"] in self.installed
+        guardrail = self.backend.model_guardrail(model)
+        installed_text = "installed" if installed else guardrail["label"]
         line = Text()
         line.append(model["label"], style="bold #e4e4ea")
         line.append(f"  [{model['name']}]  ", style="#8e8e99")
         line.append(model["size"], style="#c6b3ff")
         line.append("  ")
-        line.append(installed_text, style="#b79cff" if installed else "#6f7685")
+        if installed:
+            badge_style = "#b79cff"
+        elif guardrail["level"] == "fit":
+            badge_style = "#75c98b"
+        elif guardrail["level"] == "stretch":
+            badge_style = "#e5b567"
+        elif guardrail["level"] == "heavy":
+            badge_style = "#ff8f8f"
+        else:
+            badge_style = "#6f7685"
+        line.append(installed_text, style=badge_style)
         item = ListItem(Label(line))
         item.model = model  # type: ignore[attr-defined]
         return item
@@ -100,13 +124,44 @@ class DownloadScreen(ModalScreen[dict | None]):
 
     def update_meta(self, model: dict) -> None:
         tags = ", ".join(model["tags"])
+        guardrail = self.backend.model_guardrail(model)
         text = Text()
         text.append(f"{model['label']}\n", style="bold #e4e4ea")
         text.append(f"modality: {model['modality']}    ", style="#b79cff")
         text.append(f"vram: {model['vram']}    ", style="#bcbcc7")
         text.append(f"speed: {model['speed']}\n", style="#c6b3ff")
-        text.append(f"tags: {tags}", style="#8e8e99")
+        text.append(f"fit: {guardrail['label']}    ", style="#e5b567" if guardrail["level"] != "fit" else "#75c98b")
+        text.append(f"target: {HARDWARE_PROFILE['gpu']}\n", style="#8e8e99")
+        text.append(f"tags: {tags}\n", style="#8e8e99")
+        text.append(guardrail["message"], style="#8e8e99")
         self.query_one("#download-meta", Static).update(text)
+
+    def current_model(self) -> dict | None:
+        list_view = self.query_one("#download-list", ListView)
+        if not self.filtered or list_view.index is None:
+            return None
+        index = max(0, min(list_view.index, len(self.filtered) - 1))
+        return self.filtered[index]
+
+    @on(Input.Submitted, "#download-search")
+    def submit_search(self) -> None:
+        model = self.current_model()
+        if model is not None:
+            self.dismiss(model)
+
+    def key_down(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
+
+    def key_up(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = max((list_view.index or 0) - 1, 0)
 
     @on(Input.Changed, "#download-search")
     def update_search(self, event: Input.Changed) -> None:
@@ -124,6 +179,271 @@ class DownloadScreen(ModalScreen[dict | None]):
 
     def key_escape(self) -> None:
         self.dismiss(None)
+
+
+class CommandScreen(ModalScreen[dict | None]):
+    CSS = DownloadScreen.CSS.replace("DownloadScreen", "CommandScreen")
+
+    def __init__(self, initial_query: str = "") -> None:
+        super().__init__()
+        self.initial_query = initial_query
+        self.filtered = COMMAND_CATALOG[:]
+
+    def compose(self) -> ComposeResult:
+        with Container(id="download-shell"):
+            yield Static("Kai-zen Command Palette", id="download-title")
+            yield Input(value=self.initial_query, placeholder="Search commands", id="download-search")
+            yield ListView(id="download-list")
+            yield Static(id="download-meta")
+
+    def on_mount(self) -> None:
+        self.refresh_commands(self.initial_query)
+        self.query_one("#download-search", Input).focus()
+
+    def refresh_commands(self, query: str) -> None:
+        query = query.strip().lower().lstrip("/")
+        self.filtered = [item for item in COMMAND_CATALOG if query in item["name"].lower() or query in item["label"].lower()]
+        list_view = self.query_one("#download-list", ListView)
+        list_view.clear()
+        if not self.filtered:
+            self.query_one("#download-meta", Static).update("No commands match. Try /download, /model, /load, or /settings.")
+            return
+        for item in self.filtered:
+            line = Text()
+            line.append(item["name"], style="bold #c6b3ff")
+            line.append("  ")
+            line.append(item["label"], style="#e4e4ea")
+            row = ListItem(Label(line))
+            row.command_item = item  # type: ignore[attr-defined]
+            list_view.append(row)
+        list_view.index = 0
+        self.update_meta(self.filtered[0])
+
+    def update_meta(self, item: dict) -> None:
+        text = Text()
+        text.append(f"{item['name']}\n", style="bold #e4e4ea")
+        text.append(item["description"], style="#d7d7df")
+        if item.get("query_hint"):
+            text.append(f"\nTip: press Enter to open with search '{item['query_hint']}'.", style="#8e8e99")
+        self.query_one("#download-meta", Static).update(text)
+
+    @on(Input.Changed, "#download-search")
+    def update_search(self, event: Input.Changed) -> None:
+        self.refresh_commands(event.value)
+
+    @on(Input.Submitted, "#download-search")
+    def submit_search(self) -> None:
+        if self.filtered:
+            self.dismiss(self.filtered[0])
+
+    @on(ListView.Highlighted, "#download-list")
+    def on_highlight(self, event: ListView.Highlighted) -> None:
+        if event.item is not None:
+            self.update_meta(event.item.command_item)  # type: ignore[attr-defined]
+
+    @on(ListView.Selected, "#download-list")
+    def on_select(self, event: ListView.Selected) -> None:
+        if event.item is not None:
+            self.dismiss(event.item.command_item)  # type: ignore[attr-defined]
+
+    def key_down(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
+
+    def key_up(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = max((list_view.index or 0) - 1, 0)
+
+    def key_escape(self) -> None:
+        self.dismiss(None)
+
+
+class SessionScreen(ModalScreen[str | None]):
+    CSS = DownloadScreen.CSS.replace("DownloadScreen", "SessionScreen")
+
+    def __init__(self, initial_query: str = "") -> None:
+        super().__init__()
+        self.initial_query = initial_query
+        self.filtered: list[Path] = []
+
+    def compose(self) -> ComposeResult:
+        with Container(id="download-shell"):
+            yield Static("Kai-zen Sessions", id="download-title")
+            yield Input(value=self.initial_query, placeholder="Search sessions", id="download-search")
+            yield ListView(id="download-list")
+            yield Static(id="download-meta")
+
+    def on_mount(self) -> None:
+        self.refresh_sessions(self.initial_query)
+        self.query_one("#download-search", Input).focus()
+
+    def refresh_sessions(self, query: str) -> None:
+        query = query.strip().lower()
+        sessions = sorted(SESSIONS_DIR.glob("*.json"))
+        self.filtered = [item for item in sessions if not query or query in item.stem.lower()]
+        list_view = self.query_one("#download-list", ListView)
+        list_view.clear()
+        if not self.filtered:
+            self.query_one("#download-meta", Static).update("No saved sessions found.")
+            return
+        for session in self.filtered:
+            line = Text(session.stem, style="bold #e4e4ea")
+            row = ListItem(Label(line))
+            row.session_name = session.stem  # type: ignore[attr-defined]
+            list_view.append(row)
+        list_view.index = 0
+        self.query_one("#download-meta", Static).update("Use arrows to choose a saved session, then press Enter.")
+
+    @on(Input.Changed, "#download-search")
+    def update_search(self, event: Input.Changed) -> None:
+        self.refresh_sessions(event.value)
+
+    @on(Input.Submitted, "#download-search")
+    def submit_search(self) -> None:
+        if self.filtered:
+            self.dismiss(self.filtered[0].stem)
+
+    @on(ListView.Selected, "#download-list")
+    def on_select(self, event: ListView.Selected) -> None:
+        if event.item is not None:
+            self.dismiss(event.item.session_name)  # type: ignore[attr-defined]
+
+    def key_down(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
+
+    def key_up(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = max((list_view.index or 0) - 1, 0)
+
+    def key_escape(self) -> None:
+        self.dismiss(None)
+
+
+class ModelScreen(ModalScreen[str | None]):
+    CSS = DownloadScreen.CSS.replace("DownloadScreen", "ModelScreen")
+
+    def __init__(self, backend: KaiZenCLI, initial_query: str = "") -> None:
+        super().__init__()
+        self.backend = backend
+        self.initial_query = initial_query
+        self.filtered: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        with Container(id="download-shell"):
+            yield Static("Kai-zen Installed Models", id="download-title")
+            yield Input(value=self.initial_query, placeholder="Search installed models", id="download-search")
+            yield ListView(id="download-list")
+            yield Static(id="download-meta")
+
+    def on_mount(self) -> None:
+        self.refresh_models(self.initial_query)
+        self.query_one("#download-search", Input).focus()
+
+    def refresh_models(self, query: str) -> None:
+        query = query.strip().lower()
+        installed = sorted(self.backend.installed_models())
+        self.filtered = [name for name in installed if not query or query in name.lower()]
+        list_view = self.query_one("#download-list", ListView)
+        list_view.clear()
+        if not self.filtered:
+            self.query_one("#download-meta", Static).update("No installed models found. Use /download to pull one first.")
+            return
+        for name in self.filtered:
+            line = Text(name, style="bold #e4e4ea")
+            row = ListItem(Label(line))
+            row.model_name = name  # type: ignore[attr-defined]
+            list_view.append(row)
+        list_view.index = 0
+        self.query_one("#download-meta", Static).update("Pick an installed model to make it active.")
+
+    @on(Input.Changed, "#download-search")
+    def update_search(self, event: Input.Changed) -> None:
+        self.refresh_models(event.value)
+
+    @on(Input.Submitted, "#download-search")
+    def submit_search(self) -> None:
+        if self.filtered:
+            self.dismiss(self.filtered[0])
+
+    @on(ListView.Selected, "#download-list")
+    def on_select(self, event: ListView.Selected) -> None:
+        if event.item is not None:
+            self.dismiss(event.item.model_name)  # type: ignore[attr-defined]
+
+    def key_down(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = min((list_view.index or 0) + 1, len(self.filtered) - 1)
+
+    def key_up(self) -> None:
+        if not self.filtered:
+            return
+        list_view = self.query_one("#download-list", ListView)
+        list_view.focus()
+        list_view.index = max((list_view.index or 0) - 1, 0)
+
+    def key_escape(self) -> None:
+        self.dismiss(None)
+
+
+class ConfirmScreen(ModalScreen[bool]):
+    CSS = """
+    ConfirmScreen {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.78);
+    }
+
+    #confirm-shell {
+        width: 78;
+        height: auto;
+        border: round #7a4b4b;
+        background: #09090c;
+        padding: 1 2;
+    }
+
+    #confirm-title {
+        color: #ffb27c;
+        text-style: bold;
+        margin-bottom: 1;
+    }
+    """
+
+    def __init__(self, title: str, message: str) -> None:
+        super().__init__()
+        self.title = title
+        self.message = message
+
+    def compose(self) -> ComposeResult:
+        with Container(id="confirm-shell"):
+            yield Static(self.title, id="confirm-title")
+            yield Static(self.message)
+
+    def key_enter(self) -> None:
+        self.dismiss(True)
+
+    def key_y(self) -> None:
+        self.dismiss(True)
+
+    def key_n(self) -> None:
+        self.dismiss(False)
+
+    def key_escape(self) -> None:
+        self.dismiss(False)
 
 
 class KaiZenTUI(App):
@@ -197,8 +517,8 @@ class KaiZenTUI(App):
                 yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
                 yield Static(id="side-panel")
             with Container(id="composer"):
-                yield Input(placeholder="Message Kai-zen or type /help", id="input")
-                yield Static("Enter sends. Slash commands: /help /download /model /session /image /settings", id="command-hint")
+                yield Input(placeholder="Message Kai-zen or type / for the command palette", id="input")
+                yield Static("Enter sends. Type / to open commands. /download, /model, and /load now open pickers with arrow-key navigation.", id="command-hint")
             yield Footer()
 
     def on_mount(self) -> None:
@@ -206,7 +526,7 @@ class KaiZenTUI(App):
         self.update_hero()
         self.update_status()
         self.update_side_panel()
-        self.post_system("Kai-zen TUI ready. `/download` opens the model picker.")
+        self.post_system("Kai-zen TUI ready. Type `/` for the command palette. `/download` supports search, arrows, and guarded larger-model pulls.")
         self.query_one("#input", Input).focus()
 
     def update_hero(self) -> None:
@@ -304,7 +624,7 @@ class KaiZenTUI(App):
         installed_text = "\n".join(f"- {name}" for name in installed[:8]) or "- none"
         panel = Text()
         panel.append("Quick Actions\n", style="bold #b79cff")
-        panel.append("/download qwen\n/download vision\n/model\n/settings\n/sessions\n", style="#8e8e99")
+        panel.append("/\n/download qwen\n/model\n/load\n/settings\n", style="#8e8e99")
         panel.append("\nInstalled\n", style="bold #e4e4ea")
         panel.append(installed_text, style="#8e8e99")
         self.query_one("#side-panel", Static).update(panel)
@@ -345,23 +665,68 @@ class KaiZenTUI(App):
             fn()
         return buffer.getvalue().strip()
 
+    async def open_command_palette(self, initial_query: str = "") -> None:
+        choice = await self.push_screen_wait(CommandScreen(initial_query))
+        if not choice:
+            return
+        command = choice["name"]
+        if command == "/download":
+            await self.open_download(choice.get("query_hint", ""))
+            return
+        if command == "/model":
+            await self.open_model_picker()
+            return
+        if command == "/load":
+            await self.open_session_picker()
+            return
+        if command == "/settings":
+            self.post_output("Settings", self.capture_backend_output(self.backend.print_settings))
+            return
+        if command == "/help":
+            self.post_output("Help", self.capture_backend_output(self.backend.print_help))
+            return
+        if command == "/new":
+            await self.handle_command("/new")
+            return
+        if command == "/clearimage":
+            await self.handle_command("/clearimage")
+
+    async def open_session_picker(self, initial_query: str = "") -> None:
+        session_name = await self.push_screen_wait(SessionScreen(initial_query))
+        if not session_name:
+            self.post_system("Session picker cancelled.")
+            return
+        await self.handle_command(f"/load {session_name}")
+
+    async def open_model_picker(self, initial_query: str = "") -> None:
+        model_name = await self.push_screen_wait(ModelScreen(self.backend, initial_query))
+        if not model_name:
+            self.post_system("Model picker cancelled.")
+            return
+        self.backend.config["model"] = model_name
+        self.backend.save_config()
+        self.post_system(f"Model set to `{model_name}`")
+        self.update_status()
+
     async def open_download(self, initial_query: str = "") -> None:
         model = await self.push_screen_wait(DownloadScreen(self.backend, initial_query))
         if not model:
             self.post_system("Download cancelled.")
             return
+        guardrail = self.backend.model_guardrail(model)
+        if guardrail["level"] == "heavy":
+            proceed = await self.push_screen_wait(ConfirmScreen("Large Model Warning", f"{model['name']} is outside the comfortable {HARDWARE_PROFILE['vram_gb']} GB target for your {HARDWARE_PROFILE['gpu']}.\n\n{guardrail['message']}\n\nPress Enter/Y to continue or Esc/N to cancel."))
+            if not proceed:
+                self.post_system("Download cancelled after hardware warning.")
+                return
         self.post_system(f"Downloading `{model['name']}`...")
         self.pull_model(model)
 
     @work(thread=True)
     def pull_model(self, model: dict) -> None:
-        binary = shutil.which("ollama")
-        if not binary:
-            self.call_from_thread(self.post_system, "Ollama is not installed or not on PATH.")
-            return
         try:
-            subprocess.run([binary, "pull", model["name"]], check=True)
-        except subprocess.CalledProcessError as exc:
+            self.backend.pull_model(model["name"])
+        except Exception as exc:  # noqa: BLE001
             self.call_from_thread(self.post_system, f"Download failed for `{model['name']}`: {exc}")
             return
         self.backend.config["model"] = model["name"]
@@ -386,6 +751,10 @@ class KaiZenTUI(App):
         cmd = parts[0].lower()
         argument = raw.split(" ", 1)[1].strip() if len(parts) > 1 else ""
 
+        if cmd == "/" or (not argument and cmd not in {item["name"] for item in COMMAND_CATALOG} and cmd.startswith("/")):
+            await self.open_command_palette(cmd.lstrip("/"))
+            return
+
         if cmd == "/help":
             self.post_output("Help", self.capture_backend_output(self.backend.print_help))
             return
@@ -397,7 +766,7 @@ class KaiZenTUI(App):
             return
         if cmd == "/model":
             if len(parts) == 1:
-                self.post_system(f"Active model: `{self.backend.config['model']}`")
+                await self.open_model_picker()
             elif len(parts) >= 3 and parts[1].lower() == "set":
                 self.backend.config["model"] = parts[2]
                 self.backend.save_config()
@@ -431,7 +800,7 @@ class KaiZenTUI(App):
             return
         if cmd == "/load":
             if not argument:
-                self.post_system("Usage: `/load <name>`")
+                await self.open_session_picker()
                 return
             try:
                 self.backend.load_session(argument)
@@ -445,8 +814,7 @@ class KaiZenTUI(App):
             self.update_status()
             return
         if cmd == "/sessions":
-            names = "\n".join(f"- {p.stem}" for p in sorted(SESSIONS_DIR.glob("*.json"))) or "- none"
-            self.post_output("Sessions", names)
+            await self.open_session_picker()
             return
         if cmd == "/image":
             if not argument:
