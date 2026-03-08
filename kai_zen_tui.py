@@ -149,7 +149,6 @@ class DownloadScreen(ModalScreen[dict | None]):
         list_view = self.query_one("#download-list", ListView)
         current = list_view.index or 0
         list_view.index = max(0, min(current + delta, len(self.filtered) - 1))
-        list_view.focus()
 
     @on(Input.Submitted, "#download-search")
     def submit_search(self) -> None:
@@ -162,9 +161,11 @@ class DownloadScreen(ModalScreen[dict | None]):
         if self.focused is self.query_one("#download-search", Input):
             if event.key == "down":
                 event.stop()
+                event.prevent_default()
                 self.move_selection(1)
             elif event.key == "up":
                 event.stop()
+                event.prevent_default()
                 self.move_selection(-1)
 
     @on(Input.Changed, "#download-search")
@@ -247,12 +248,12 @@ class CommandScreen(ModalScreen[dict | None]):
             current = list_view.index or 0
             if event.key == "down":
                 event.stop()
+                event.prevent_default()
                 list_view.index = min(current + 1, len(self.filtered) - 1)
-                list_view.focus()
             elif event.key == "up":
                 event.stop()
+                event.prevent_default()
                 list_view.index = max(current - 1, 0)
-                list_view.focus()
 
     @on(ListView.Highlighted, "#download-list")
     def on_highlight(self, event: ListView.Highlighted) -> None:
@@ -320,12 +321,12 @@ class SessionScreen(ModalScreen[str | None]):
             current = list_view.index or 0
             if event.key == "down":
                 event.stop()
+                event.prevent_default()
                 list_view.index = min(current + 1, len(self.filtered) - 1)
-                list_view.focus()
             elif event.key == "up":
                 event.stop()
+                event.prevent_default()
                 list_view.index = max(current - 1, 0)
-                list_view.focus()
 
     @on(ListView.Selected, "#download-list")
     def on_select(self, event: ListView.Selected) -> None:
@@ -389,12 +390,12 @@ class ModelScreen(ModalScreen[str | None]):
             current = list_view.index or 0
             if event.key == "down":
                 event.stop()
+                event.prevent_default()
                 list_view.index = min(current + 1, len(self.filtered) - 1)
-                list_view.focus()
             elif event.key == "up":
                 event.stop()
+                event.prevent_default()
                 list_view.index = max(current - 1, 0)
-                list_view.focus()
 
     @on(ListView.Selected, "#download-list")
     def on_select(self, event: ListView.Selected) -> None:
