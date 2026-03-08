@@ -420,7 +420,11 @@ class KaiZenTUI(App):
             return
         if cmd in {"/session", "/save"}:
             name = argument or self.backend.session_name
-            path = self.backend.save_session(name)
+            try:
+                path = self.backend.save_session(name)
+            except Exception as exc:  # noqa: BLE001
+                self.post_system(f"Command error: {exc}")
+                return
             self.backend.session_name = name
             self.post_system(f"Saved session: `{path.name}`")
             self.update_status()
@@ -429,7 +433,11 @@ class KaiZenTUI(App):
             if not argument:
                 self.post_system("Usage: `/load <name>`")
                 return
-            self.backend.load_session(argument)
+            try:
+                self.backend.load_session(argument)
+            except Exception as exc:  # noqa: BLE001
+                self.post_system(f"Command error: {exc}")
+                return
             self.compact_header = bool(self.backend.messages)
             self.query_one("#chat-log", RichLog).clear()
             self.render_loaded_messages()
@@ -444,7 +452,11 @@ class KaiZenTUI(App):
             if not argument:
                 self.post_system("Usage: `/image <path>`")
                 return
-            image = self.backend.ensure_image(argument)
+            try:
+                image = self.backend.ensure_image(argument)
+            except Exception as exc:  # noqa: BLE001
+                self.post_system(f"Command error: {exc}")
+                return
             self.backend.pending_images.append(image)
             self.post_system(f"Queued image: `{image}`")
             self.update_status()
@@ -460,7 +472,11 @@ class KaiZenTUI(App):
                 return
             _, rest = raw.split(" ", 1)
             image_raw, prompt = rest.split("|", 1)
-            image = self.backend.ensure_image(image_raw.strip())
+            try:
+                image = self.backend.ensure_image(image_raw.strip())
+            except Exception as exc:  # noqa: BLE001
+                self.post_system(f"Command error: {exc}")
+                return
             self.post_user(prompt.strip())
             self.send_chat(prompt.strip(), [image])
             return
@@ -478,7 +494,11 @@ class KaiZenTUI(App):
             self.update_status()
             return
         if cmd in {"/exit", "/quit"}:
-            self.backend.save_session()
+            try:
+                self.backend.save_session()
+            except Exception as exc:  # noqa: BLE001
+                self.post_system(f"Command error: {exc}")
+                return
             self.exit()
             return
 
