@@ -8,13 +8,17 @@ from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image
-
 
 APP_DIR = Path(__file__).resolve().parent
 CONFIG_PATH = APP_DIR / "config.json"
 SESSIONS_DIR = APP_DIR / "sessions"
 LOGO_PATH = Path(r"C:\Users\Robin\Desktop\RRTECH\Assets\KaizenInnovations\logoEmblem.png")
+ANSI_RESET = "\033[0m"
+ANSI_CYAN = "\033[96m"
+ANSI_BLUE = "\033[94m"
+ANSI_DIM = "\033[2m"
+ANSI_GOLD = "\033[93m"
+ANSI_VIOLET = "\033[95m"
 
 DEFAULT_CONFIG = {
     "backend": "ollama",
@@ -94,35 +98,111 @@ class KaiZenCLI:
     def list_sessions(self) -> list[Path]:
         return sorted(SESSIONS_DIR.glob("*.json"))
 
+    def color_enabled(self) -> bool:
+        return sys.stdout.isatty() and not self.config.get("no_color", False)
+
+    def rgb(self, text: str, r: int, g: int, b: int) -> str:
+        if not self.color_enabled():
+            return text
+        return f"\033[38;2;{r};{g};{b}m{text}{ANSI_RESET}"
+
+    def style(self, text: str, code: str) -> str:
+        if not self.color_enabled():
+            return text
+        return f"{code}{text}{ANSI_RESET}"
+
     def render_logo(self) -> str:
-        if not LOGO_PATH.exists():
-            return "[ Kai-zen CLI ]"
-        try:
-            chars = " .:-=+*#%@"
-            image = Image.open(LOGO_PATH).convert("L")
-            width = 40
-            aspect = image.height / image.width if image.width else 1
-            height = max(12, int(width * aspect * 0.45))
-            image = image.resize((width, height))
-            lines = []
-            for y in range(height):
-                row = []
-                for x in range(width):
-                    pixel = image.getpixel((x, y))
-                    row.append(chars[pixel * (len(chars) - 1) // 255])
-                lines.append("".join(row).rstrip())
-            return "\n".join(line for line in lines if line.strip())
-        except Exception:
-            return "[ Kai-zen CLI ]"
+        # Best version: two crossing diagonal blades forming dynamic K
+        # B=navy body, b=bright blue edge, G=gold seam, V=violet lower arm, S=lavender streak
+        raw_lines = [
+            "___________________________SS___________________________",
+            "__________________________SSS___________________________",
+            "________________________SSSS____________________________",
+            "______________________SSSSS_______bbb__________________",
+            "____________________SSSSS_______bbbbb__________________",
+            "___________________SSSS_______bbbbbbb__________________",
+            "_________________SSS________bbbbbbbb___________________",
+            "________________SS________bbbbbbbbb____________________",
+            "_______________S________bbbbbbbbbb_____________________",
+            "__________________________bbbbbBBBbb____SS______________",
+            "________________________bbbBBBBBBBBbb__SSSS_____________",
+            "______________________bbbBBBBBBBBBBBb_SSSSS____________",
+            "____________________bbBBBBBBBBBBBBBBbbSSSS_____________",
+            "__________________bbBBBBBBBBBBBBBBBBBbSSS______________",
+            "________________bbBBBBBBBBBBBBBBBBBBBbS________________",
+            "______________bbBBBBBBBBBBBBBBBBBBBBBBb_________________",
+            "____________bbBBBBBBBBBBBBBBBBBBBBBBBb__________________",
+            "__________bbBBBBBBBBBBBBBBBBBBBBBBBBb___________________",
+            "________bbBBBBBBBBBBBGGGGGGGGGGBBBBb____________________",
+            "______bbBBBBBBBBBBGGGGGGGGGGGGGGBBb_____________________",
+            "____bbBBBBBBBBBGGGGGGGGGGGGGGGGGBb______________________",
+            "__bbBBBBBBBBGGGGGGGGGGGGGGGGGGGBb_______________________",
+            "_bBBBBBBBGGGGGGGGGGVVVVVVVVVVVVb________________________",
+            "__BBBBBGGGGGGGGVVVVVVVVVVVVVVVb_________________________",
+            "___BBBBGGGGGVVVVVVVVVVVVVVVVVb__________________________",
+            "____BBBBGGVVVVVVVVVVVVVVVVVVb___________________________",
+            "_____BBBbVVVVVVVVVVVVVVVVVVb____________________________",
+            "______Bb__VVVVVVVVVVVVVVVVb_____________________________",
+            "_______b____VVVVVVVVVVVVVb______________________________",
+            "________________VVVVVVVVb____SS_________________________",
+            "__________________VVVVVb___SSSS__________________________",
+            "____________________VVb__SSSSS__________________________",
+            "______________________b_SSSS____________________________",
+            "_______________________SSSS_____________________________",
+            "______________________SSS_______________________________",
+        ]
+
+        color_map = {
+            "B": (10, 30, 110),    # deep navy blade body
+            "b": (31, 123, 255),   # bright blue leading edge
+            "G": (243, 229, 93),   # gold highlight seam
+            "V": (130, 40, 220),   # violet lower blade
+            "S": (182, 181, 214),  # lavender brush streak
+        }
+        glyph_map = {
+            "B": "%",
+            "b": "/",
+            "G": "|",
+            "V": "%",
+            "S": "~",
+            "_": " ",
+        }
+
+        use_color = self.color_enabled()
+        rendered = []
+        for raw in raw_lines:
+            row = []
+            for ch in raw:
+                glyph = glyph_map.get(ch, ch)
+                if use_color and ch in color_map:
+                    r, g, b = color_map[ch]
+                    row.append(f"\033[38;2;{r};{g};{b}m{glyph}{ANSI_RESET}")
+                else:
+                    row.append(glyph)
+            rendered.append("".join(row).rstrip())
+
+        art = [line for line in rendered if line.strip()]
+        w = 58
+        border = self.rgb("=" * w, 10, 30, 110) if use_color else "=" * w
+        title_text = "K A I - Z E N   C L I"
+        sub_text = "Local Qwen Test Console"
+        if use_color:
+            title = self.rgb(title_text.center(w), 31, 123, 255)
+            sub = self.rgb(sub_text.center(w), 217, 75, 255)
+        else:
+            title = title_text.center(w)
+            sub = sub_text.center(w)
+        return "\n".join(["", border, "", *art, "", border, title, sub, border, ""])
 
     def print_banner(self) -> None:
         print(self.render_logo())
-        print("Kai-zen CLI")
-        print(f"- backend: {self.config['backend']}")
-        print(f"- model:   {self.config['model']}")
+        print(self.style("Kai-zen CLI", ANSI_CYAN))
+        print(f"- backend: {self.style(self.config['backend'], ANSI_BLUE)}")
+        print(f"- model:   {self.style(self.config['model'], ANSI_GOLD)}")
         print(f"- path:    {self.config['model_path']}")
-        print(f"- session: {self.session_name}")
-        print("- /help for commands")
+        print(f"- session: {self.style(self.session_name, ANSI_VIOLET)}")
+        print(f"- queued:  {self.style(str(len(self.pending_images)), ANSI_VIOLET)} image(s)")
+        print(f"- /help for commands")
 
     def print_help(self) -> None:
         print(
@@ -231,7 +311,7 @@ class KaiZenCLI:
 
     def run_prompt(self, prompt: str, images: list[Path] | None = None) -> None:
         reply = self.ollama_chat(prompt, images)
-        print(f"\n{self.config['model']}\n{reply}\n")
+        print(f"\n{self.style(self.config['model'], ANSI_GOLD)}\n{reply}\n")
 
     def handle_command(self, raw: str) -> bool:
         parts = raw.split(maxsplit=2)
@@ -340,7 +420,7 @@ class KaiZenCLI:
         self.print_banner()
         while True:
             try:
-                raw = input("\nYou> ").strip()
+                raw = input(f"\n{self.style('You', ANSI_CYAN)}> ").strip()
             except (KeyboardInterrupt, EOFError):
                 print("\nExiting...")
                 self.save_session()
