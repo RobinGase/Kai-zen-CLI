@@ -144,17 +144,9 @@ class KaiZenTUI(App):
         margin: 1 1 0 1;
     }
 
-    #status {
-        height: 3;
-        border: round #2b2b33;
-        background: #09090c;
-        padding: 0 1;
-        margin: 1;
-    }
-
     #body {
         height: 1fr;
-        margin: 0 1;
+        margin: 1;
     }
 
     #chat-log {
@@ -195,11 +187,11 @@ class KaiZenTUI(App):
     def __init__(self) -> None:
         super().__init__()
         self.backend = KaiZenCLI()
+        self.compact_header = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="shell"):
             yield Static(id="hero")
-            yield Static(id="status")
             with Horizontal(id="body"):
                 yield RichLog(id="chat-log", markup=True, wrap=True, highlight=True)
                 yield Static(id="side-panel")
@@ -209,6 +201,7 @@ class KaiZenTUI(App):
             yield Footer()
 
     def on_mount(self) -> None:
+        self.compact_header = bool(self.backend.messages)
         self.update_hero()
         self.update_status()
         self.update_side_panel()
@@ -229,16 +222,21 @@ class KaiZenTUI(App):
         body.append(self.backend.config["backend"], style="bold #b79cff")
         body.append("   Session ", style="#6f7685")
         body.append(self.backend.session_name, style="bold #bcbcc7")
+        body.append("   Images ", style="#6f7685")
+        body.append(str(len(self.backend.pending_images)), style="bold #b79cff")
 
         info = Text()
         info.append_text(title)
-        info.append("\n")
-        info.append_text(subtitle)
-        info.append("\n\n")
+        if not self.compact_header:
+            info.append("\n")
+            info.append_text(subtitle)
+            info.append("\n\n")
+        else:
+            info.append("\n")
         info.append_text(body)
 
         grid = Table.grid(expand=True, padding=(0, 2))
-        grid.add_column(width=32)
+        grid.add_column(width=32 if not self.compact_header else 22)
         grid.add_column(ratio=1)
         logo_renderable = logo if logo is not None else Text("KZ", style="bold #b79cff")
         grid.add_row(logo_renderable, info)
@@ -279,16 +277,6 @@ class KaiZenTUI(App):
         return None
 
     def update_status(self) -> None:
-        status = Text()
-        status.append("backend ", style="#8e8e99")
-        status.append(self.backend.config["backend"], style="bold #b79cff")
-        status.append("   model ", style="#8e8e99")
-        status.append(self.backend.config["model"], style="bold #e4e4ea")
-        status.append("   session ", style="#8e8e99")
-        status.append(self.backend.session_name, style="bold #b79cff")
-        status.append("   images ", style="#8e8e99")
-        status.append(str(len(self.backend.pending_images)), style="bold #b79cff")
-        self.query_one("#status", Static).update(status)
         self.update_hero()
 
     def update_side_panel(self) -> None:
@@ -307,7 +295,9 @@ class KaiZenTUI(App):
 
     def post_user(self, message: str) -> None:
         log = self.query_one("#chat-log", RichLog)
+        self.compact_header = True
         log.write(Panel(Text(message, style="#f0f0f4"), title="You", border_style="#5a4b78"))
+        self.update_hero()
 
     def post_assistant(self, message: str) -> None:
         log = self.query_one("#chat-log", RichLog)
@@ -391,6 +381,7 @@ class KaiZenTUI(App):
             self.backend.session_name = parts[1] if len(parts) > 1 else f"session-{now_stamp()}"
             self.backend.messages = []
             self.backend.pending_images = []
+            self.compact_header = False
             self.query_one("#chat-log", RichLog).clear()
             self.post_system(f"New session: `{self.backend.session_name}`")
             self.update_status()
@@ -407,6 +398,7 @@ class KaiZenTUI(App):
                 self.post_system("Usage: `/load <name>`")
                 return
             self.backend.load_session(parts[1])
+            self.compact_header = bool(self.backend.messages)
             self.query_one("#chat-log", RichLog).clear()
             self.post_system(f"Loaded session: `{self.backend.session_name}`")
             self.update_status()
