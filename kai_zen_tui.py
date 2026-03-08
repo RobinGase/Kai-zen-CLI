@@ -253,6 +253,9 @@ class KaiZenTUI(App):
         if color_term in {"truecolor", "24bit"}:
             chafa_colors = "full"
             converter_color = True
+        elif os.name == "nt" and os.environ.get("WT_SESSION"):
+            chafa_colors = "full"
+            converter_color = True
         elif "256color" in term or color_term:
             chafa_colors = "256"
             converter_color = True
