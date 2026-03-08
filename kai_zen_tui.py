@@ -248,15 +248,25 @@ class KaiZenTUI(App):
     def load_logo_preview(self) -> Text | None:
         if not LOGO_PATH.exists():
             return None
-        rich_color = os.environ.get("COLORTERM", "").lower() in {"truecolor", "24bit"}
+        color_term = os.environ.get("COLORTERM", "").lower()
+        term = os.environ.get("TERM", "").lower()
+        if color_term in {"truecolor", "24bit"}:
+            chafa_colors = "full"
+            converter_color = True
+        elif "256color" in term or color_term:
+            chafa_colors = "256"
+            converter_color = True
+        else:
+            chafa_colors = "none"
+            converter_color = False
         for binary_name, command in (
             (
                 "chafa",
-                ["--symbols", "vhalf+braille", "--size", "30x10", "--colors", "full"]
-                if rich_color
+                ["--symbols", "vhalf+braille", "--size", "30x10", "--colors", chafa_colors]
+                if chafa_colors != "none"
                 else ["--symbols", "ascii", "--size", "26x8", "--colors", "none"],
             ),
-            ("ascii-image-converter", ["-C", "-b", "-W", "30"] if rich_color else ["-c", "-W", "26"]),
+            ("ascii-image-converter", ["-C", "-b", "-W", "30"] if converter_color else ["-c", "-W", "26"]),
         ):
             binary = shutil.which(binary_name)
             if not binary:
