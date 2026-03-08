@@ -73,6 +73,7 @@ def slugify(value: str) -> str:
 
 class KaiZenCLI:
     def __init__(self) -> None:
+        SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
         self.config = self.load_config()
         self.session_name = f"session-{now_stamp()}"
         self.messages = []

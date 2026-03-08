@@ -1,3 +1,7 @@
 @echo off
 setlocal
-python "%~dp0kai_zen_tui.py"
+pushd "%~dp0"
+python "%~dp0kai_zen_tui.py" %*
+set EXITCODE=%ERRORLEVEL%
+popd
+exit /b %EXITCODE%
