@@ -1,4 +1,5 @@
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -247,9 +248,15 @@ class KaiZenTUI(App):
     def load_logo_preview(self) -> Text | None:
         if not LOGO_PATH.exists():
             return None
+        rich_color = os.environ.get("COLORTERM", "").lower() in {"truecolor", "24bit"}
         for binary_name, command in (
-            ("chafa", ["--symbols", "vhalf+braille", "--size", "30x10", "--colors", "full"]),
-            ("ascii-image-converter", ["-C", "-b", "-W", "30"]),
+            (
+                "chafa",
+                ["--symbols", "vhalf+braille", "--size", "30x10", "--colors", "full"]
+                if rich_color
+                else ["--symbols", "ascii", "--size", "26x8", "--colors", "none"],
+            ),
+            ("ascii-image-converter", ["-C", "-b", "-W", "30"] if rich_color else ["-c", "-W", "26"]),
         ):
             binary = shutil.which(binary_name)
             if not binary:
